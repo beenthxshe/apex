@@ -145,3 +145,5 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+apex/contrib/csrc/cudnn-frontend
+apex/contrib/csrc/multihead_attn/cutlass
