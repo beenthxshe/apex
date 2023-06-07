@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from packaging.version import Version, parse
 
 import torch
 from torch import distributed as dist
@@ -8,18 +9,13 @@ from torch.utils import collect_env
 from torch.testing._internal import common_utils
 from torch.testing._internal import common_distributed
 
-HAS_TORCH_UCC = None
-try:
-    import torch_ucc
-    HAS_TORCH_UCC = True
-except ImportError:
-    HAS_TORCH_UCC = False
+from apex.transformer._ucc_util import HAS_UCC
 
 # NOTE(mkozuki): Version guard for ucc. ref: https://github.com/openucx/ucc/issues/496
-_TORCH_UCC_COMPAT_NVIDIA_DRIVER_VERSION = "470.42.01"
+_TORCH_UCC_COMPAT_NVIDIA_DRIVER_VERSION = Version("470.42.01")
 _driver_version = None
 if torch.cuda.is_available():
-    _driver_version = collect_env.get_nvidia_driver_version(collect_env.run)
+    _driver_version = parse(collect_env.get_nvidia_driver_version(collect_env.run))
 HAS_TORCH_UCC_COMPAT_NVIDIA_DRIVER = _driver_version is not None and _driver_version >= _TORCH_UCC_COMPAT_NVIDIA_DRIVER_VERSION
 
 
@@ -34,6 +30,7 @@ class DistributedTestBase(common_distributed.MultiProcessTestCase):
         self._spawn_processes()
 
     def tearDown(self) -> None:
+        torch.cuda.empty_cache()
         super().tearDown()
 
     @property
@@ -84,16 +81,16 @@ class NcclDistributedTestBase(DistributedTestBase):
 
     DISTRIBUTED_BACKEND = "nccl"
 
-
 @unittest.skipUnless(
-    HAS_TORCH_UCC,
-    "Requires [`torch_ucc`](https://github.com/facebookresearch/torch_ucc)",
+    HAS_UCC,
+    "Requires either torch ucc or pytorch build from source with native ucc installed and enabled",
 )
 @unittest.skipUnless(
     HAS_TORCH_UCC_COMPAT_NVIDIA_DRIVER,
     f"`torch_ucc` requires NVIDIA driver >= {_TORCH_UCC_COMPAT_NVIDIA_DRIVER_VERSION} but {_driver_version} found. "
     "See https://github.com/openucx/ucc/issues/496",
 )
+
 class UccDistributedTestBase(DistributedTestBase):
 
     DISTRIBUTED_BACKEND = "ucc"
@@ -114,7 +111,7 @@ class UccDistributedTestBase(DistributedTestBase):
 
         self._has_ucx_tls = "UCX_TLS" in os.environ
         if not self._has_ucx_tls:
-            os.environ["UCX_TLS"] = "tcp,cuda_copy"
+            os.environ["UCX_TLS"] = "tcp,cuda"
         print('os.environ[\"UCX_TLS\"] = {}'.format(os.environ["UCX_TLS"]))
 
     def tearDown(self) -> None:
